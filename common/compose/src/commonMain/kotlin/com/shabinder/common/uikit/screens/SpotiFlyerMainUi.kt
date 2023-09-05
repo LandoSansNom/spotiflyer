@@ -17,6 +17,7 @@
 package com.shabinder.common.uikit.screens
 
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -25,6 +26,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -39,13 +41,19 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.BottomSheetScaffold
+import androidx.compose.material.BottomSheetScaffoldDefaults
 import androidx.compose.material.Card
+import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.Icon
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.OutlinedButton
+import androidx.compose.material.Slider
+import androidx.compose.material.Surface
 import androidx.compose.material.Switch
 import androidx.compose.material.SwitchDefaults
 import androidx.compose.material.Tab
@@ -56,6 +64,11 @@ import androidx.compose.material.Text
 import androidx.compose.material.TextField
 import androidx.compose.material.TextFieldDefaults.textFieldColors
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.rounded.CardGiftcard
@@ -63,13 +76,17 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.rememberBottomSheetScaffoldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -83,7 +100,6 @@ import com.shabinder.common.main.SpotiFlyerMain
 import com.shabinder.common.main.SpotiFlyerMain.HomeCategory
 import com.shabinder.common.models.DownloadRecord
 import com.shabinder.common.models.Actions
-import com.shabinder.common.models.spotify.Source
 import com.shabinder.common.translations.Strings
 import com.shabinder.common.uikit.GaanaLogo
 import com.shabinder.common.uikit.GithubLogo
@@ -103,11 +119,19 @@ import com.shabinder.common.uikit.configurations.colorPrimary
 import com.shabinder.common.uikit.configurations.transparent
 import com.shabinder.common.uikit.dialogs.DonationDialogComponent
 import com.shabinder.common.uikit.rememberScrollbarAdapter
+import java.lang.Math.floor
+import androidx.core.net.toUri
+import java.io.File
+import android.media.MediaPlayer;
+import java.io.FilenameFilter
+import android.media.MediaMetadataRetriever
+
+
 
 @Composable
 fun SpotiFlyerMainContent(component: SpotiFlyerMain) {
     val model by component.model.subscribeAsState()
-
+val audios = fetchMp3Files("/storage/emulated/0/Download/SpotiFlyer/")
     val (openDonationDialog, _, _) = DonationDialogComponent {
         component.dismissDonationDialogOffset()
     }
@@ -134,14 +158,27 @@ fun SpotiFlyerMainContent(component: SpotiFlyerMain) {
                     openDonationDialog()
                 }
             )
+
             HomeCategory.History -> HistoryColumn(
                 model.records.sortedByDescending { it.id },
                 component::loadImage,
                 component::onLinkSearch
             )
+
+            HomeCategory.Downloads -> DownloadsColumn(
+                progress = 50f,
+                onProgressChange = {},
+                isAudioPlaying = true,
+                audioList = audios,
+                currentPlayingAudio = audios[0],
+                onStart = {},
+                onItemClick = {},
+                onNext = {}
+            )
         }
     }
 }
+
 
 @Composable
 fun HomeTabBar(
@@ -172,6 +209,8 @@ fun HomeTabBar(
                         text = when (category) {
                             HomeCategory.About -> Strings.about()
                             HomeCategory.History -> Strings.history()
+                            HomeCategory.Downloads -> Strings.downloads()
+
                         },
                         style = MaterialTheme.typography.body2
                     )
@@ -180,6 +219,10 @@ fun HomeTabBar(
                     when (category) {
                         HomeCategory.About -> Icon(Icons.Outlined.Info, Strings.infoTab())
                         HomeCategory.History -> Icon(Icons.Outlined.History, Strings.historyTab())
+                        HomeCategory.Downloads -> Icon(
+                            Icons.Outlined.Download,
+                            Strings.downloadsTab()
+                        )
                     }
                 }
             )
@@ -247,7 +290,11 @@ fun SearchPanel(
                 )
             )
         ) {
-            Text(text = Strings.search(), style = SpotiFlyerTypography.h6, modifier = Modifier.padding(4.dp))
+            Text(
+                text = Strings.search(),
+                style = SpotiFlyerTypography.h6,
+                modifier = Modifier.padding(4.dp)
+            )
         }
     }
 }
@@ -275,13 +322,21 @@ fun AboutColumn(
                         color = colorAccent
                     )
                     Spacer(modifier = Modifier.padding(top = 12.dp))
-                    Row(horizontalArrangement = Arrangement.Center, modifier = modifier.fillMaxWidth()) {
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = modifier.fillMaxWidth()
+                    ) {
                         Icon(
                             SpotifyLogo(),
                             "${Strings.open()} Spotify",
                             tint = Color.Unspecified,
                             modifier = Modifier.clip(SpotiFlyerShapes.small).clickable(
-                                onClick = { Actions.instance.openPlatform("com.spotify.music", "https://open.spotify.com") }
+                                onClick = {
+                                    Actions.instance.openPlatform(
+                                        "com.spotify.music",
+                                        "https://open.spotify.com"
+                                    )
+                                }
                             )
                         )
                         Spacer(modifier = modifier.padding(start = 16.dp))
@@ -290,7 +345,12 @@ fun AboutColumn(
                             "${Strings.open()} Gaana",
                             tint = Color.Unspecified,
                             modifier = Modifier.clip(SpotiFlyerShapes.small).clickable(
-                                onClick = { Actions.instance.openPlatform("com.gaana", "https://www.gaana.com") }
+                                onClick = {
+                                    Actions.instance.openPlatform(
+                                        "com.gaana",
+                                        "https://www.gaana.com"
+                                    )
+                                }
                             )
                         )
                         Spacer(modifier = modifier.padding(start = 16.dp))
@@ -299,7 +359,12 @@ fun AboutColumn(
                             "${Strings.open()} Jio Saavn",
                             tint = Color.Unspecified,
                             modifier = Modifier.clickable(
-                                onClick = { Actions.instance.openPlatform("com.jio.media.jiobeats", "https://www.jiosaavn.com/") }
+                                onClick = {
+                                    Actions.instance.openPlatform(
+                                        "com.jio.media.jiobeats",
+                                        "https://www.jiosaavn.com/"
+                                    )
+                                }
                             )
                         )
                         Spacer(modifier = modifier.padding(start = 16.dp))
@@ -308,7 +373,12 @@ fun AboutColumn(
                             "${Strings.open()} Youtube",
                             tint = Color.Unspecified,
                             modifier = Modifier.clip(SpotiFlyerShapes.small).clickable(
-                                onClick = { Actions.instance.openPlatform("com.google.android.youtube", "https://m.youtube.com") }
+                                onClick = {
+                                    Actions.instance.openPlatform(
+                                        "com.google.android.youtube",
+                                        "https://m.youtube.com"
+                                    )
+                                }
                             )
                         )
                         Spacer(modifier = modifier.padding(start = 12.dp))
@@ -317,18 +387,31 @@ fun AboutColumn(
                             "${Strings.open()} Youtube Music",
                             tint = Color.Unspecified,
                             modifier = Modifier.clip(SpotiFlyerShapes.small).clickable(
-                                onClick = { Actions.instance.openPlatform("com.google.android.apps.youtube.music", "https://music.youtube.com/") }
+                                onClick = {
+                                    Actions.instance.openPlatform(
+                                        "com.google.android.apps.youtube.music",
+                                        "https://music.youtube.com/"
+                                    )
+                                }
                             )
                         )
                     }
                     Spacer(modifier = Modifier.padding(top = 8.dp))
-                    Row(horizontalArrangement = Arrangement.Center, modifier = modifier.fillMaxWidth()) {
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = modifier.fillMaxWidth()
+                    ) {
                         Icon(
                             SoundCloudLogo(),
                             "${Strings.open()} Sound Cloud",
                             tint = Color.Unspecified,
                             modifier = Modifier.clip(SpotiFlyerShapes.medium).clickable(
-                                onClick = { Actions.instance.openPlatform("com.soundcloud.android", "https://soundcloud.com/") }
+                                onClick = {
+                                    Actions.instance.openPlatform(
+                                        "com.soundcloud.android",
+                                        "https://soundcloud.com/"
+                                    )
+                                }
                             )
                         )
                     }
@@ -349,11 +432,21 @@ fun AboutColumn(
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth().clickable(
-                            onClick = { Actions.instance.openPlatform("", "https://github.com/Shabinder/SpotiFlyer") }
+                            onClick = {
+                                Actions.instance.openPlatform(
+                                    "",
+                                    "https://github.com/Shabinder/SpotiFlyer"
+                                )
+                            }
                         )
                             .padding(vertical = 6.dp)
                     ) {
-                        Icon(GithubLogo(), Strings.openProjectRepo(), Modifier.size(32.dp), tint = Color(0xFFCCCCCC))
+                        Icon(
+                            GithubLogo(),
+                            Strings.openProjectRepo(),
+                            Modifier.size(32.dp),
+                            tint = Color(0xFFCCCCCC)
+                        )
                         Spacer(modifier = Modifier.padding(start = 16.dp))
                         Column {
                             Text(
@@ -368,10 +461,19 @@ fun AboutColumn(
                     }
                     Row(
                         modifier = modifier.fillMaxWidth().padding(vertical = 6.dp)
-                            .clickable(onClick = { Actions.instance.openPlatform("", "https://github.com/Shabinder/SpotiFlyer/blob/main/CONTRIBUTING.md") }),
+                            .clickable(onClick = {
+                                Actions.instance.openPlatform(
+                                    "",
+                                    "https://github.com/Shabinder/SpotiFlyer/blob/main/CONTRIBUTING.md"
+                                )
+                            }),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Rounded.Flag, Strings.help() + Strings.translate(), Modifier.size(32.dp))
+                        Icon(
+                            Icons.Rounded.Flag,
+                            Strings.help() + Strings.translate(),
+                            Modifier.size(32.dp)
+                        )
                         Spacer(modifier = Modifier.padding(start = 16.dp))
                         Column {
                             Text(
@@ -390,7 +492,11 @@ fun AboutColumn(
                             .clickable(onClick = openDonationDialog),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Rounded.CardGiftcard, Strings.supportDeveloper(), Modifier.size(32.dp))
+                        Icon(
+                            Icons.Rounded.CardGiftcard,
+                            Strings.supportDeveloper(),
+                            Modifier.size(32.dp)
+                        )
                         Spacer(modifier = Modifier.padding(start = 16.dp))
                         Column {
                             Text(
@@ -413,7 +519,11 @@ fun AboutColumn(
                             ),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Rounded.Share, Strings.share() + Strings.title() + "App", Modifier.size(32.dp))
+                        Icon(
+                            Icons.Rounded.Share,
+                            Strings.share() + Strings.title() + "App",
+                            Modifier.size(32.dp)
+                        )
                         Spacer(modifier = Modifier.padding(start = 16.dp))
                         Column {
                             Text(
@@ -435,7 +545,11 @@ fun AboutColumn(
                             ),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Rounded.Insights, Strings.analytics() + Strings.status(), Modifier.size(32.dp))
+                        Icon(
+                            Icons.Rounded.Insights,
+                            Strings.analytics() + Strings.status(),
+                            Modifier.size(32.dp)
+                        )
                         Spacer(modifier = Modifier.padding(start = 16.dp))
                         Column(
                             Modifier.weight(1f)
@@ -474,12 +588,22 @@ fun HistoryColumn(
 ) {
     Crossfade(list) {
         if (it.isEmpty()) {
-            Column(Modifier.padding(8.dp).fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                Modifier.padding(8.dp).fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Icon(
-                    Icons.Outlined.Info, Strings.noHistoryAvailable(), modifier = Modifier.size(80.dp),
+                    Icons.Outlined.Info,
+                    Strings.noHistoryAvailable(),
+                    modifier = Modifier.size(80.dp),
                     colorOffWhite
                 )
-                Text(Strings.noHistoryAvailable(), style = SpotiFlyerTypography.h4.copy(fontWeight = FontWeight.Light), textAlign = TextAlign.Center)
+                Text(
+                    Strings.noHistoryAvailable(),
+                    style = SpotiFlyerTypography.h4.copy(fontWeight = FontWeight.Light),
+                    textAlign = TextAlign.Center
+                )
             }
         } else {
             Box {
@@ -501,19 +625,11 @@ fun HistoryColumn(
                     state = listState,
                     modifier = Modifier.padding(top = 8.dp).fillMaxSize()
                 )
-
-                /*VerticalScrollbar(
-                    modifier = Modifier.padding(end = 2.dp).align(Alignment.CenterEnd).fillMaxHeight(),
-                    adapter = rememberScrollbarAdapter(
-                        scrollState = listState,
-                        itemCount = itemList.size,
-                        averageItemSize = 70.dp
-                    )
-                )*/
             }
         }
     }
 }
+
 
 @Composable
 fun DownloadRecordItem(
@@ -521,22 +637,39 @@ fun DownloadRecordItem(
     loadImage: suspend (String) -> Picture,
     onItemClicked: (String) -> Unit
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(end = 8.dp)) {
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(end = 8.dp)
+    ) {
         ImageLoad(
             item.coverUrl,
             { loadImage(item.coverUrl) },
             Strings.albumArt(),
             modifier = Modifier.height(70.dp).width(70.dp).clip(SpotiFlyerShapes.medium)
         )
-        Column(modifier = Modifier.padding(horizontal = 8.dp).height(60.dp).weight(1f), verticalArrangement = Arrangement.SpaceEvenly) {
-            Text(item.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = SpotiFlyerTypography.h6, color = colorAccent)
+        Column(
+            modifier = Modifier.padding(horizontal = 8.dp).height(60.dp).weight(1f),
+            verticalArrangement = Arrangement.SpaceEvenly
+        ) {
+            Text(
+                item.name,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = SpotiFlyerTypography.h6,
+                color = colorAccent
+            )
             Row(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Bottom,
                 modifier = Modifier.padding(horizontal = 8.dp).fillMaxSize()
             ) {
                 Text(item.type, fontSize = 13.sp, color = colorOffWhite)
-                Text("${Strings.tracks()}: ${item.totalFiles}", fontSize = 13.sp, color = colorOffWhite)
+                Text(
+                    "${Strings.tracks()}: ${item.totalFiles}",
+                    fontSize = 13.sp,
+                    color = colorOffWhite
+                )
             }
         }
         Image(
@@ -552,6 +685,67 @@ fun DownloadRecordItem(
     }
 }
 
+
+@Composable
+fun AudioItem(
+    audio: DownloadRecord,
+    onItemClick: (id: Long) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp)
+            .clickable {
+                onItemClick.invoke(audio.id)
+            },
+        backgroundColor = MaterialTheme.colors.surface.copy(alpha = .5f)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(8.dp)
+            ) {
+                Spacer(modifier = Modifier.size(4.dp))
+                Text(
+                    text = audio.name,
+                    style = MaterialTheme.typography.h6,
+                    overflow = TextOverflow.Clip,
+                    maxLines = 1
+                )
+                Spacer(modifier = Modifier.size(4.dp))
+                Text(
+                    text = audio.type,
+                    style = MaterialTheme.typography.subtitle1,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip,
+                    color = MaterialTheme.colors
+                        .onSurface
+                        .copy(alpha = .5f)
+                )
+
+            }
+            val duration = getMp3Duration(audio.link + audio.name)
+           Text(text = timeStampToDuration(duration))
+            Spacer(modifier = Modifier.size(8.dp))
+        }
+
+    }
+
+
+}
+
+private fun timeStampToDuration(position: Long): String {
+    val totalSeconds = floor(position / 1E3).toInt()
+    val minutes = totalSeconds / 60
+    val remainingSeconds = totalSeconds - (minutes * 60)
+
+    return if (position < 0) "--:--"
+    else "%d:%02d".format(minutes, remainingSeconds)
+
+
+}
+
 @Composable
 fun HomeCategoryTabIndicator(
     modifier: Modifier = Modifier,
@@ -563,3 +757,243 @@ fun HomeCategoryTabIndicator(
             .background(color, RoundedCornerShape(topStartPercent = 100, topEndPercent = 100))
     )
 }
+
+@OptIn(ExperimentalMaterialApi::class)
+@Composable
+fun DownloadsColumn(
+    progress: Float,
+    onProgressChange: (Float) -> Unit,
+    currentPlayingAudio: DownloadRecord?,
+    onStart: (DownloadRecord) -> Unit,
+    onItemClick: (DownloadRecord) -> Unit,
+    audioList: List<DownloadRecord>,
+    isAudioPlaying: Boolean,
+    onNext: () -> Unit
+) {
+
+
+    val mediaPlayer = remember { MediaPlayer() }
+
+    val scaffoldState = rememberBottomSheetScaffoldState()
+
+    val animatedHeight by animateDpAsState(
+        targetValue = if (currentPlayingAudio == null) 0.dp
+        else BottomSheetScaffoldDefaults.SheetPeekHeight
+    )
+
+    BottomSheetScaffold(
+        sheetContent = {
+            currentPlayingAudio?.let { currentPlayingAudio ->
+                BottomBarPlayer(
+                    progress = progress,
+                    onProgressChange = onProgressChange,
+                    downloadRecord = currentPlayingAudio,
+                    isAudioPlaying = isAudioPlaying,
+                    onStart = { onStart.invoke(currentPlayingAudio) },
+                    onNext = { onNext.invoke() }
+                )
+
+            }
+        },
+        scaffoldState = scaffoldState,
+        sheetPeekHeight = animatedHeight
+    ) {
+        LazyColumn(
+            contentPadding = PaddingValues(bottom = 56.dp)
+        ) {
+            items(audioList) { audio: DownloadRecord ->
+                AudioItem(
+                    audio = audio,
+                    onItemClick = { onItemClick.invoke(audio) },
+                )
+            }
+        }
+
+    }
+}
+
+@Composable
+fun BottomBarPlayer(
+    progress: Float,
+    onProgressChange: (Float) -> Unit,
+    downloadRecord: DownloadRecord,
+    isAudioPlaying: Boolean,
+    onStart: () -> Unit,
+    onNext: () -> Unit
+) {
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            ArtistInfo(
+                downloadRecord = downloadRecord,
+                modifier = Modifier.weight(1f),
+            )
+            MediaPlayerController(
+                isAudioPlaying = isAudioPlaying,
+                onStart = { onStart.invoke() },
+                onNext = { onNext.invoke() }
+            )
+        }
+        Slider(
+            value = progress,
+            onValueChange = { onProgressChange.invoke(it) },
+            valueRange = 0f..100f
+        )
+
+
+    }
+
+
+}
+
+@Composable
+fun MediaPlayerController(
+    isAudioPlaying: Boolean,
+    onStart: () -> Unit,
+    onNext: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .height(56.dp)
+            .padding(4.dp)
+    ) {
+        PlayerIconItem(
+            icon = if (isAudioPlaying) Icons.Default.Pause
+            else Icons.Default.PlayArrow,
+            backgroundColor = MaterialTheme.colors.primary
+        ) {
+            onStart.invoke()
+        }
+        Spacer(modifier = Modifier.size(8.dp))
+        Icon(
+            imageVector = Icons.Default.SkipNext,
+            contentDescription = null,
+            modifier = Modifier.clickable {
+                onNext.invoke()
+            }
+        )
+    }
+
+
+}
+
+
+@Composable
+fun ArtistInfo(
+    modifier: Modifier = Modifier,
+    downloadRecord: DownloadRecord
+) {
+    Row(
+        modifier = modifier.padding(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+
+        PlayerIconItem(
+            icon = Icons.Default.MusicNote,
+            border = BorderStroke(
+                width = 1.dp,
+                color = MaterialTheme.colors.onSurface
+            ),
+        ) {}
+        Spacer(modifier = Modifier.size(4.dp))
+
+        Column {
+            Text(
+                text = downloadRecord.name,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.h6,
+                overflow = TextOverflow.Clip,
+                modifier = Modifier.weight(1f),
+                maxLines = 1
+            )
+            Spacer(modifier = Modifier.size(4.dp))
+            Text(
+                text = downloadRecord.type,
+                fontWeight = FontWeight.Normal,
+                style = MaterialTheme.typography.subtitle1,
+                overflow = TextOverflow.Clip,
+                maxLines = 1
+            )
+        }
+
+
+    }
+
+
+}
+
+@Composable
+fun PlayerIconItem(
+    icon: ImageVector,
+    border: BorderStroke? = null,
+    backgroundColor: Color = MaterialTheme.colors.surface,
+    color: Color = MaterialTheme.colors.onSurface,
+    onClick: () -> Unit
+) {
+
+    Surface(
+        shape = CircleShape,
+        border = border,
+        modifier = Modifier
+            .clip(CircleShape)
+            .clickable {
+                onClick.invoke()
+            },
+        contentColor = color,
+        color = backgroundColor
+
+    ) {
+        Box(
+            modifier = Modifier.padding(4.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+            )
+
+        }
+
+
+    }
+}
+
+
+private fun fetchMp3Files(directoryPath: String): List<DownloadRecord> {
+    val downloadRecords = mutableListOf<DownloadRecord>()
+    val directory = File(directoryPath)
+    val mp3Filter = FilenameFilter { _, name -> name.endsWith(".mp3", true) }
+    val files = directory.listFiles(mp3Filter)
+
+    files?.forEach { file ->
+        downloadRecords.add(
+            DownloadRecord(
+                link = directoryPath,
+                type = "type",
+                name = file.name,
+                coverUrl = "",
+            )
+        )
+    }
+    return downloadRecords
+}
+
+private fun getMp3Duration(mp3FilePath: String): Long {
+    val retriever = MediaMetadataRetriever()
+    retriever.setDataSource(mp3FilePath)
+    val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+    retriever.release()
+
+    // Convert the duration from milliseconds to seconds or minutes if needed
+    return durationStr?.toLongOrNull() ?: 0
+}
+
+
+
+

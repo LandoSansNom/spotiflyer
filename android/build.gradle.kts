@@ -88,6 +88,9 @@ dependencies {
     implementation(compose.materialIconsExtended)
     implementation(deps.androidx.activity)
 
+    implementation("androidx.compose.material:material:1.0.1")
+    implementation ("androidx.media:media:1.4.1")
+
     // Project's SubModules
     implementation(project(":common:database"))
     implementation(project(":common:compose"))
